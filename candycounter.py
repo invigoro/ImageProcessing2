@@ -6,10 +6,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import colors
 from matplotlib import cm
-from skimage.feature import peak_local_max
-from skimage.morphology import watershed
-from scipy import ndimage
-import imutils
+from sklearn.cluster import MiniBatchKMeans
 import argparse
 
 image = None
@@ -36,6 +33,10 @@ else:
     print(image)
     #cv.imshow("File", image)
     image = cv.imread(image, cv.IMREAD_COLOR)
+    (h, w) = image.shape[:2]
+    image = cv.GaussianBlur(image,(31,31),0)
+    image = cv.cvtColor(image, cv.COLOR_BGR2LAB)
+    image = image.reshape((image.shape[0] * image.shape[1], 3))
     """    #Setting up color plot
     r, g, b = cv.split(image)
     fig = plt.figure()
@@ -52,52 +53,28 @@ else:
     axis.set_zlabel("Blue")
     plt.show()
      #end plot"""
+    #cv.imshow("Image", image)
+    #cv.show()
     print('yes')
 
-    image = cv.GaussianBlur(image,(1,1),0)
-    shifted = cv.pyrMeanShiftFiltering(image, 18, 56)
+    clt = MiniBatchKMeans(n_clusters= 32)
+    labels = clt.fit_predict(image)
+    quant = clt.cluster_centers_.astype("uint8")[labels]
 
-    gray = cv.cvtColor(shifted, cv.COLOR_BGR2GRAY)
-    thresh = cv.threshold(gray, 0, 255,
-                           cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
-    cv.imshow("Thresh", thresh)
+    # reshape the feature vectors to images
+    quant = quant.reshape((h, w, 3))
+    image = image.reshape((h, w, 3))
 
-    D = ndimage.distance_transform_edt(thresh)
-    localMax = peak_local_max(D, indices=False, min_distance=25,
-                              labels=thresh)
-    markers = ndimage.label(localMax, structure=np.ones((3, 3)))[0]
-    labels = watershed(-D, markers, mask=thresh)
-    print("[INFO] {} unique segments found".format(len(np.unique(labels)) - 1))
+    # convert from L*a*b* to RGB
+    quant = cv.cvtColor(quant, cv.COLOR_LAB2BGR)
+    image = cv.cvtColor(image, cv.COLOR_LAB2BGR)
 
-    for label in np.unique(labels):
-        # if the label is zero, we are examining the 'background'
-        # so simply ignore it
-        if label == 0:
-            continue
-
-        # otherwise, allocate memory for the label region and draw
-        # it on the mask
-        mask = np.zeros(gray.shape, dtype="uint8")
-        mask[labels == label] = 255
-
-        # detect contours in the mask and grab the largest one
-        cnts = cv.findContours(mask.copy(), cv.RETR_EXTERNAL,
-                                cv.CHAIN_APPROX_SIMPLE)
-        cnts = imutils.grab_contours(cnts)
-        c = max(cnts, key=cv.contourArea)
-
-        # draw a circle enclosing the object
-        ((x, y), r) = cv.minEnclosingCircle(c)
-        cv.circle(image, (int(x), int(y)), int(r), (0, 255, 0), 2)
-        cv.putText(image, "#{}".format(label), (int(x) - 10, int(y)),
-                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    # show the output image
-    cv.imshow("Output", image)
+    # display the images and wait for a keypress
+    cv.imshow("image", np.hstack([image, quant]))
     cv.waitKey(0)
-    cv.show()
+
 
 finally:
-    cv.imshow("File", image)
+    #cv.imshow("File", image)
     cv.waitKey(0)
     cv.destroyAllWindows()
